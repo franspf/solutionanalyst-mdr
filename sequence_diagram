@@ -1,0 +1,278 @@
+//REGISTER ACCOUNT
+title Register Account
+
+participant user
+participant mobileapps
+participant service registration
+participant database
+participant storage
+
+user->mobileapps:Do register
+note over user,mobileapps:input data : \nname, email, telephone\n, foto ktp and password
+
+mobileapps->service registration:POST {URL}/v1/register
+
+service registration ->database : validate users by\ntelephone
+database-->service registration : response 
+
+alt invalid
+service registration->mobileapps:Registration FAILED,\ntelephone number has been registered
+mobileapps->user : registration failed,\ntelephone number has been registered
+
+else valid
+service registration->service registration : hash password
+service registration->database : INSERT INTO users
+database->database:insert
+database-->service registration:response
+
+service registration->storage:Upload foto KTP
+storage->storage:save 
+storage-->service registration : foto KTP saved
+
+service registration->mobileapps : Registration SUCCESS
+mobileapps->user : Registration SUCCESS
+end
+
+/v1/login
+
+
+
+
+
+
+//LOGIN USERNAME PASSWORD 
+title Login Activity
+
+participant user
+participant mobileapps
+participant service login
+participant database
+
+
+group login activity
+alt use username password
+user ->mobileapps : input \nusername & password
+else use biometric
+user ->mobileapps : login using biometric
+mobileapps ->mobileapps : Get scret key on memory
+end
+end
+
+
+mobileapps->service login : POST login \nusername & password (encrypted)
+
+service login ->database : validate username
+database->database: cek username
+database-->service login : response
+
+group invalid user
+service login->mobileapps:Login FAILED,\nusername not found
+mobileapps ->user : Login FAILED
+end
+
+group valid user 
+service login ->service login : decrypt
+service login ->database : password verify
+database->database: validate
+database-->service login : response
+
+alt password invalid
+service login->mobileapps:Login FAILED,\npassword invalid
+mobileapps ->user : Login FAILED
+else valid
+
+service login ->service login : generate token
+service login ->database : insert token
+database -->service login :response
+service login->mobileapps:Login Success,\n+ token
+mobileapps ->user : Login SUCCESS
+
+end
+end
+
+
+
+
+
+
+//LOGIN BIOMETRIC
+title Login Biometric
+
+participant user
+participant mobileapps
+participant service login
+participant database
+
+user ->mobileapps : Login Biometric
+mobileapps ->mobileapps : Get scret key on memory
+
+mobileapps->service login : POST login \nusername & password (encrypted)
+
+service login ->database : validate username
+database->database: cek username
+database-->service login : response
+
+group invalid user
+service login->mobileapps:Login FAILED,\nusername not found
+mobileapps ->user : Login FAILED
+end
+
+group valid user 
+service login ->service login : decrypt
+service login ->database : password verify
+database->database: validate
+database-->service login : response
+
+alt password invalid
+service login->mobileapps:Login FAILED,\npassword invalid
+mobileapps ->user : Login FAILED
+else valid
+
+service login ->service login : generate token
+service login ->database : insert token
+database -->service login :response
+service login->mobileapps:Login Success,\n+ token
+mobileapps ->user : Login SUCCESS
+
+end
+end
+
+
+
+
+
+
+//LOAN
+title Loan
+
+participant user
+participant mobileapps
+participant service loan
+participant database
+
+user->mobileapps:Apply loan
+note over user,mobileapps:input data : \namount and tenor
+mobileapps ->mobileapps : show verify request\nusing password
+user->mobileapps:Input password
+mobileapps->mobileapps:Encrypt password
+
+mobileapps ->service loan : POST /loanapply
+
+group verify token
+service loan ->database : verify token
+database ->database : verify token
+database -->service loan :response
+alt invalid
+service loan --> mobileapps :  token invalid
+mobileapps -->user : Apply FAILED, \nplease retry
+else valid : Do password verify
+end
+end
+
+
+group password verify
+service loan ->service loan : decrypt password	az	
+service loan ->database : password verify
+database->database: validate
+database-->service loan : response
+alt password invalid
+service loan-->mobileapps:Apply FAILED,\npassword invalid
+mobileapps -->user : Apply FAILED \npassword invalid
+else valid : Do amount verify
+end
+end
+
+group amount verify
+service loan -> service loan : amount verify
+alt amount invalid
+service loan-->mobileapps:Apply FAILED,\namount invalid
+mobileapps -->user : Apply FAILED \namount invalid
+else valid : Do tenor verify
+end
+end
+
+group tenor verify
+service loan -> service loan : tenor verify
+alt tenor invalid
+service loan-->mobileapps:Apply FAILED,\ntenor invalid
+mobileapps -->user : Apply FAILED \ntenor invalid
+else valid : Do insert
+end
+end
+
+service loan ->database : INSERT INTO loan
+database->database:insert
+database-->service loan:response
+service loan-->mobileapps:Apply on proccess,\ntrx number
+mobileapps -->user : Apply on proccess \ntrx number
+
+
+
+
+
+
+//LOAN APPROVAL
+title Loan Approval
+
+participant dashboard
+participant admin
+participant service loan
+participant database
+participant service notification
+
+dashboard->admin : show request loan
+group reject
+admin->dashboard : Reject request loan
+dashboard ->service loan : Reject
+service loan->database : Update status \nREJECT
+database ->database : Update
+database-->service loan : response
+service loan-->dashboard : Trx number rejected
+dashboard->admin : Trx number rejected
+end
+
+group success
+admin->dashboard : Approve request loan
+dashboard ->service loan : Approve
+service loan->database : Update status \nAPPROVE
+database ->database : Update
+database-->service loan : response
+service loan-->dashboard : Trx number approved
+dashboard->admin : Trx number approved
+
+
+service loan -> service notification : POST /notification
+end
+
+
+
+
+
+
+//NOTIFICATION 
+title Notification
+
+participant service loan
+participant message broker
+participant service notification
+participant database
+participant SMS Provider
+participant user
+
+
+service loan ->message broker : publish notification
+note over service loan,message broker:data : \nuser, trx number, datatime,\n amount, tenor, trx status
+service notification ->message broker : concume notification
+
+group SMS
+service notification->service notification : compose \nSMS format
+service notification ->database : save hystory SMS
+service notification -> SMS Provider : request SMS
+SMS Provider -> user : Send SMS
+end 
+
+group Email
+service notification->service notification : Compose email
+service notification ->database : save hystory Email
+service notification->user : Senf Email
+end
